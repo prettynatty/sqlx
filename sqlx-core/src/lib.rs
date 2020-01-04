@@ -16,6 +16,7 @@ mod database;
 mod executor;
 mod query;
 mod query_as;
+mod transaction;
 mod url;
 
 #[macro_use]
@@ -44,6 +45,7 @@ pub use connection::Connection;
 pub use executor::Executor;
 pub use query::{query, Query};
 pub use query_as::{query_as, QueryAs};
+pub use transaction::Transaction;
 
 #[doc(hidden)]
 pub use query_as::query_as_mapped;

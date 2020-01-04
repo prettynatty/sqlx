@@ -8,8 +8,13 @@ use std::{
 
 use async_std::sync::Sender;
 use futures_util::future::FutureExt;
+use futures_core::future::BoxFuture;
+use futures_core::stream::BoxStream;
 
 use crate::Database;
+use crate::transaction::Transaction;
+use crate::describe::Describe;
+use crate::executor::Executor;
 
 use self::inner::SharedPool;
 pub use self::options::Builder;
@@ -28,7 +33,7 @@ where
     pool_tx: Sender<Idle<DB>>,
 }
 
-struct Connection<DB: Database> {
+pub struct PoolConnection<DB: Database> {
     raw: Option<Raw<DB>>,
     pool_tx: Sender<Idle<DB>>,
 }
@@ -67,8 +72,8 @@ where
     /// Retrieves a connection from the pool.
     ///
     /// Waits for at most the configured connection timeout before returning an error.
-    pub async fn acquire(&self) -> crate::Result<impl DerefMut<Target = DB::Connection>> {
-        self.inner.acquire().await.map(|conn| Connection {
+    pub async fn acquire(&self) -> crate::Result<PoolConnection<DB>> {
+        self.inner.acquire().await.map(|conn| PoolConnection {
             raw: Some(conn),
             pool_tx: self.pool_tx.clone(),
         })
@@ -77,11 +82,16 @@ where
     /// Attempts to retrieve a connection from the pool if there is one available.
     ///
     /// Returns `None` immediately if there are no idle connections available in the pool.
-    pub fn try_acquire(&self) -> Option<impl DerefMut<Target = DB::Connection>> {
-        self.inner.try_acquire().map(|conn| Connection {
+    pub fn try_acquire(&self) -> Option<PoolConnection<DB>> {
+        self.inner.try_acquire().map(|conn| PoolConnection {
             raw: Some(conn),
             pool_tx: self.pool_tx.clone(),
         })
+    }
+
+    /// Retrieves a new connection and immediately begins a new transaction.
+    pub async fn begin(&self) -> crate::Result<Transaction<PoolConnection<DB>>> {
+        Ok(Transaction::new(0, self.acquire().await?).await?)
     }
 
     /// Ends the use of a connection pool. Prevents any new connections
@@ -143,7 +153,7 @@ where
 
 const DEREF_ERR: &str = "(bug) connection already released to pool";
 
-impl<DB: Database> Deref for Connection<DB> {
+impl<DB: Database> Deref for PoolConnection<DB> {
     type Target = DB::Connection;
 
     fn deref(&self) -> &Self::Target {
@@ -151,13 +161,55 @@ impl<DB: Database> Deref for Connection<DB> {
     }
 }
 
-impl<DB: Database> DerefMut for Connection<DB> {
+impl<DB: Database> DerefMut for PoolConnection<DB> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.raw.as_mut().expect(DEREF_ERR).inner
     }
 }
 
-impl<DB: Database> Drop for Connection<DB> {
+impl<DB> Executor for PoolConnection<DB>
+where
+    DB: Database
+{
+    type Database = DB;
+
+    fn send<'e, 'q: 'e>(&'e mut self, commands: &'q str) -> BoxFuture<'e, crate::Result<()>> {
+        self.deref_mut().send(commands)
+    }
+
+    fn execute<'e, 'q: 'e>(
+        &'e mut self,
+        query: &'q str,
+        args: DB::Arguments,
+    ) -> BoxFuture<'e, crate::Result<u64>> {
+        self.deref_mut().execute(query, args)
+    }
+
+    fn fetch<'e, 'q: 'e>(
+        &'e mut self,
+        query: &'q str,
+        args: DB::Arguments,
+    ) -> BoxStream<'e, crate::Result<DB::Row>> {
+        self.deref_mut().fetch(query, args)
+    }
+
+    fn fetch_optional<'e, 'q: 'e>(
+        &'e mut self,
+        query: &'q str,
+        args: DB::Arguments,
+    ) -> BoxFuture<'e, crate::Result<Option<DB::Row>>> {
+        self.deref_mut().fetch_optional(query, args)
+    }
+
+    fn describe<'e, 'q: 'e>(
+        &'e mut self,
+        query: &'q str,
+    ) -> BoxFuture<'e, crate::Result<Describe<Self::Database>>> {
+        self.deref_mut().describe(query)
+    }
+}
+
+impl<DB: Database> Drop for PoolConnection<DB> {
     fn drop(&mut self) {
         if let Some(conn) = self.raw.take() {
             self.pool_tx
