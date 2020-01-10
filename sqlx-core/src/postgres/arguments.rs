@@ -39,7 +39,7 @@ impl Arguments for PgArguments {
         // TODO: When/if we receive types that do _not_ support BINARY, we need to check here
         // TODO: There is no need to be explicit unless we are expecting mixed BINARY / TEXT
 
-        self.types.push(<Postgres as HasSqlType<T>>::metadata().oid);
+        self.types.push(<Postgres as HasSqlType<T>>::id().0);
 
         let pos = self.values.len();
 

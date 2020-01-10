@@ -1,6 +1,5 @@
 //! Types for returning SQL type information about queries.
 
-use crate::types::HasTypeMetadata;
 use crate::Database;
 use std::fmt::{self, Debug};
 
@@ -11,7 +10,7 @@ where
     DB: Database + ?Sized,
 {
     /// The expected types for the parameters of the query.
-    pub param_types: Box<[<DB as HasTypeMetadata>::TypeId]>,
+    pub param_types: Box<[DB::TypeId]>,
 
     /// The type and table information, if any for the results of the query.
     pub result_columns: Box<[Column<DB>]>,
@@ -20,7 +19,7 @@ where
 impl<DB> Debug for Describe<DB>
 where
     DB: Database,
-    <DB as HasTypeMetadata>::TypeId: Debug,
+    DB::TypeId: Debug,
     Column<DB>: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -38,15 +37,15 @@ where
     DB: Database + ?Sized,
 {
     pub name: Option<Box<str>>,
-    pub table_id: Option<<DB as HasTypeMetadata>::TableId>,
-    pub type_id: <DB as HasTypeMetadata>::TypeId,
+    pub table_id: Option<DB::TableId>,
+    pub type_id: DB::TypeId,
 }
 
 impl<DB> Debug for Column<DB>
 where
     DB: Database + ?Sized,
-    <DB as HasTypeMetadata>::TableId: Debug,
-    <DB as HasTypeMetadata>::TypeId: Debug,
+    DB::TableId: Debug,
+    DB::TypeId: Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Column")

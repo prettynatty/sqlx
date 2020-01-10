@@ -9,6 +9,10 @@ impl Database for Postgres {
     type Arguments = super::PgArguments;
 
     type Row = super::PgRow;
+
+    type TypeId = super::PgTypeId;
+
+    type TableId = u32;
 }
 
 impl_into_arguments_for_database!(Postgres);

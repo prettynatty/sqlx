@@ -1,7 +1,6 @@
 use super::Encode;
 use crate::io::BufMut;
-use crate::postgres::protocol::StatementId;
-use crate::postgres::types::TypeFormat;
+use crate::postgres::protocol::{StatementId, TypeFormat};
 use byteorder::{ByteOrder, NetworkEndian};
 use std::num::NonZeroU32;
 

@@ -1,13 +1,14 @@
+use std::fmt::Display;
+
 use crate::arguments::Arguments;
 use crate::connection::Connection;
 use crate::row::Row;
-use crate::types::HasTypeMetadata;
 
 /// A database driver.
 ///
 /// This trait encapsulates a complete driver implementation to a specific
 /// database (e.g., MySQL, Postgres).
-pub trait Database: HasTypeMetadata + 'static {
+pub trait Database: 'static {
     /// The concrete `Connection` implementation for this database.
     type Connection: Connection<Database = Self>;
 
@@ -16,4 +17,10 @@ pub trait Database: HasTypeMetadata + 'static {
 
     /// The concrete `Row` implementation for this database.
     type Row: Row<Database = Self>;
+
+    /// The Rust type of type identifiers for this database.
+    type TypeId: Display + Copy + PartialEq<Self::TypeId>;
+
+    /// The Rust type of table identifiers for this database.
+    type TableId: Display;
 }

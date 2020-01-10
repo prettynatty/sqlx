@@ -1,12 +1,12 @@
 use crate::decode::{Decode, DecodeError};
 use crate::encode::Encode;
-use crate::postgres::types::PgTypeMetadata;
+use crate::postgres::protocol::TypeId;
 use crate::postgres::Postgres;
 use crate::types::HasSqlType;
 
 impl HasSqlType<bool> for Postgres {
-    fn metadata() -> PgTypeMetadata {
-        PgTypeMetadata::binary(16, 100)
+    fn accepts() -> &'static [Self::TypeId] {
+        &[TypeId::BOOL]
     }
 }
 
@@ -18,11 +18,8 @@ impl Encode<Postgres> for bool {
 
 impl Decode<Postgres> for bool {
     fn decode(buf: &[u8]) -> Result<Self, DecodeError> {
-        match buf.len() {
-            0 => Err(DecodeError::Message(Box::new(
-                "Expected minimum 1 byte but received none.",
-            ))),
-            _ => Ok(buf[0] != 0),
-        }
+        buf.get(0).map(|&b| b != 0).ok_or_else(|| {
+            DecodeError::Message(Box::new("Expected minimum 1 byte but received none."))
+        })
     }
 }

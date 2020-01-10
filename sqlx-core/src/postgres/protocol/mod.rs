@@ -5,6 +5,12 @@
 // the size of this module to exactly what is necessary.
 #![allow(unused)]
 
+mod type_format;
+mod type_id;
+
+pub use type_format::TypeFormat;
+pub use type_id::TypeId;
+
 mod bind;
 mod cancel_request;
 mod close;

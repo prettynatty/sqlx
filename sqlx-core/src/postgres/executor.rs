@@ -6,8 +6,7 @@ use futures_core::future::BoxFuture;
 use futures_core::stream::BoxStream;
 
 use crate::describe::{Column, Describe};
-use crate::postgres::protocol::{self, Encode, Message, StatementId};
-use crate::postgres::types::TypeFormat;
+use crate::postgres::protocol::{self, Encode, Message, StatementId, TypeFormat};
 use crate::postgres::{PgArguments, PgRow, Postgres};
 
 #[derive(Debug)]

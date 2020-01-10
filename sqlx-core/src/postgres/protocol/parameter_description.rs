@@ -1,11 +1,11 @@
 use crate::io::Buf;
-use crate::postgres::protocol::Decode;
+use crate::postgres::protocol::{Decode, TypeId};
 use byteorder::NetworkEndian;
 use std::io;
 
 #[derive(Debug)]
 pub struct ParameterDescription {
-    pub ids: Box<[u32]>,
+    pub ids: Box<[TypeId]>,
 }
 
 impl Decode for ParameterDescription {
@@ -14,7 +14,7 @@ impl Decode for ParameterDescription {
         let mut ids = Vec::with_capacity(cnt);
 
         for _ in 0..cnt {
-            ids.push(buf.get_u32::<NetworkEndian>()?);
+            ids.push(TypeId(buf.get_u32::<NetworkEndian>()?));
         }
 
         Ok(Self {
