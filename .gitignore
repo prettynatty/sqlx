@@ -9,3 +9,6 @@ target/
 
 # Environment
 .env
+
+ci/ssl/root.*
+ci/ssl/server.*
