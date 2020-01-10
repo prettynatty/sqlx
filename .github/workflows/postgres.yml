@@ -49,9 +49,9 @@ jobs:
 
     # -----------------------------------------------------
 
-    - run: cargo test -p sqlx --no-default-features --features 'postgres macros uuid chrono'
+    - run: cargo test -p sqlx --no-default-features --features 'postgres macros uuid chrono tls'
       env:
-        DATABASE_URL: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/postgres
+        DATABASE_URL: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/postgres?sslmode=require
 
     # Rust ------------------------------------------------
 

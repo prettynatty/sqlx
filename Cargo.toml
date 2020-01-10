@@ -27,6 +27,7 @@ authors = [
 [features]
 default = [ "macros" ]
 macros = [ "sqlx-macros", "proc-macro-hack" ]
+tls = ["sqlx-core/tls"]
 
 # database
 postgres = [ "sqlx-core/postgres", "sqlx-macros/postgres" ]

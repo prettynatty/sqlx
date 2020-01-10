@@ -1,14 +1,14 @@
 use std::convert::TryInto;
 
-use async_std::net::{Shutdown, TcpStream};
+use async_std::net::Shutdown;
 use byteorder::NetworkEndian;
 use futures_core::future::BoxFuture;
 
 use crate::cache::StatementCache;
 use crate::connection::Connection;
-use crate::io::{Buf, BufStream};
-use crate::postgres::protocol::{self, Decode, Encode, Message, StatementId};
+use crate::io::{Buf, BufStream, MaybeTlsStream};
 use crate::postgres::PgError;
+use crate::postgres::protocol::{self, Decode, Encode, Message, StatementId};
 use crate::url::Url;
 
 /// An asynchronous connection to a [Postgres] database.
@@ -17,7 +17,7 @@ use crate::url::Url;
 /// string, as documented at
 /// <https://www.postgresql.org/docs/12/libpq-connect.html#LIBPQ-CONNSTRING>
 pub struct PgConnection {
-    pub(super) stream: BufStream<TcpStream>,
+    pub(super) stream: BufStream<MaybeTlsStream>,
 
     // Map of query to statement id
     pub(super) statement_cache: StatementCache<StatementId>,
@@ -36,8 +36,31 @@ pub struct PgConnection {
 }
 
 impl PgConnection {
+    #[cfg(feature = "tls")]
+    async fn try_ssl(&mut self, url: &Url, invalid_certs: bool, invalid_hostnames: bool) -> crate::Result<bool> {
+        protocol::SslRequest::encode(self.stream.buffer_mut());
+
+        self.stream.flush().await?;
+
+        match self.stream.peek(1).await? {
+            Some(b"N") => return Ok(false),
+            Some(b"S") => (),
+            Some(other) => return Err(tls_err!("unexpected single-byte response: 0x{:02X}", other[0]).into()),
+            None => return Err(tls_err!("server unexpectedly closed connection").into())
+        }
+
+        let connector = async_native_tls::TlsConnector::new()
+            .danger_accept_invalid_certs(invalid_certs)
+            .danger_accept_invalid_hostnames(invalid_hostnames);
+
+        self.stream.clear_bufs();
+        self.stream.stream.upgrade(url, connector).await?;
+
+        Ok(true)
+    }
+
     // https://www.postgresql.org/docs/12/protocol-flow.html#id-1.10.5.7.3
-    async fn startup(&mut self, url: Url) -> crate::Result<()> {
+    async fn startup(&mut self, url: &Url) -> crate::Result<()> {
         // Defaults to postgres@.../postgres
         let username = url.username().unwrap_or("postgres");
         let database = url.database().unwrap_or("postgres");
@@ -76,7 +99,7 @@ impl PgConnection {
                             protocol::PasswordMessage::ClearText(
                                 url.password().unwrap_or_default(),
                             )
-                            .encode(self.stream.buffer_mut());
+                                .encode(self.stream.buffer_mut());
 
                             self.stream.flush().await?;
                         }
@@ -87,7 +110,7 @@ impl PgConnection {
                                 user: username,
                                 salt,
                             }
-                            .encode(self.stream.buffer_mut());
+                                .encode(self.stream.buffer_mut());
 
                             self.stream.flush().await?;
                         }
@@ -97,7 +120,7 @@ impl PgConnection {
                                 "requires unimplemented authentication method: {:?}",
                                 auth
                             )
-                            .into());
+                                .into());
                         }
                     }
                 }
@@ -200,7 +223,8 @@ impl PgConnection {
 impl PgConnection {
     pub(super) async fn open(url: crate::Result<Url>) -> crate::Result<Self> {
         let url = url?;
-        let stream = TcpStream::connect((url.host(), url.port(5432))).await?;
+
+        let stream = MaybeTlsStream::connect(&url, 5432).await?;
         let mut self_ = Self {
             stream: BufStream::new(stream),
             process_id: 0,
@@ -211,7 +235,36 @@ impl PgConnection {
             ready: true,
         };
 
-        self_.startup(url).await?;
+        let ssl_mode = url.get_param("sslmode").unwrap_or("prefer".into());
+
+        match &*ssl_mode {
+            // TODO: on "allow" retry with TLS if startup fails
+            "disable" | "allow" => (),
+
+            #[cfg(feature = "tls")]
+            "prefer" => { self_.try_ssl(&url, true, true).await?; },
+
+            #[cfg(not(feature = "tls"))]
+            "prefer" => log::info!("compiled without TLS, skipping upgrade"),
+
+            #[cfg(feature = "tls")]
+            "require" | "verify-ca" | "verify-full" => if !self_.try_ssl(
+                &url,
+                ssl_mode == "require", // false for both verify-ca and verify-full
+                ssl_mode != "verify-full" // false for only verify-full
+            ).await? {
+                return Err(tls_err!("Postgres server does not support TLS").into())
+            }
+
+            #[cfg(not(feature = "tls"))]
+            "require" | "verify-ca" | "verify-full" => return Err(
+                tls_err!("sslmode {:?} unsupported; SQLx was compiled without `tls` feature",
+                         ssl_mode).into()
+            ),
+            _ => return Err(tls_err!("unknown `sslmode` value: {:?}", ssl_mode).into()),
+        }
+
+        self_.startup(&url).await?;
 
         Ok(self_)
     }
@@ -219,9 +272,9 @@ impl PgConnection {
 
 impl Connection for PgConnection {
     fn open<T>(url: T) -> BoxFuture<'static, crate::Result<Self>>
-    where
-        T: TryInto<Url, Error = crate::Error>,
-        Self: Sized,
+        where
+            T: TryInto<Url, Error=crate::Error>,
+            Self: Sized,
     {
         Box::pin(PgConnection::open(url.try_into()))
     }
